@@ -1,0 +1,104 @@
+import FreeCAD as App
+import FreeCADGui as Gui
+import Part
+import math
+
+doc = App.ActiveDocument
+sel = Gui.Selection.getSelectionEx()
+
+if not sel:
+    raise Exception("Select a cylindrical face or a cylindrical solid")
+
+obj = sel[0]. Object
+shape = obj.Shape
+
+# ---------------- USER OPTIONS ----------------
+knurl_depth = 0.6      # mm
+knurl_pitch = 2.5      # mm
+knurl_angle = 35       # degrees
+max_cuts = 100         # Safety limit
+# ----------------------------------------------
+
+# Find cylindrical face
+cyl_face = None
+for f in shape.Faces:
+    if isinstance(f.Surface, Part. Cylinder):
+        cyl_face = f
+        break
+
+if cyl_face is None: 
+    raise Exception("No cylindrical face found")
+
+radius = cyl_face.Surface.Radius
+axis = cyl_face.Surface. Axis.normalize()
+center = cyl_face.Surface.Center  # Use Surface.Center instead
+
+# Better height calculation
+bbox = cyl_face.BoundBox
+height = max(bbox.XLength, bbox.YLength, bbox. ZLength)
+
+# Calculate number of cuts with safety limit
+circumference = 2 * math.pi * radius
+count = min(max_cuts // 2, max(6, int(circumference / knurl_pitch)))
+
+print(f"Creating {count * 2} cuts on cylinder (radius={radius:.2f}, height={height:. 2f})")
+
+def make_cut(angle_sign, rot_angle):
+    angle = math.radians(knurl_angle * angle_sign)
+    length = height * 1.5
+    width = knurl_depth
+    depth = knurl_depth * 2  # Don't make this too deep
+    
+    # Create box at origin
+    box = Part. makeBox(depth, width, length)
+    box.translate(App.Vector(-depth/2, radius - knurl_depth, -length/2))
+    
+    # Apply rotation around Z-axis first (for knurl angle)
+    rot1 = App.Rotation(App.Vector(0, 0, 1), angle_sign * knurl_angle)
+    # Then rotation around cylinder axis (for position around circumference)
+    rot2 = App.Rotation(axis, rot_angle)
+    
+    combined_rot = rot2.multiply(rot1)
+    box.Placement = App.Placement(center, combined_rot)
+    
+    return box
+
+# Create cuts
+cuts = []
+for i in range(count):
+    rot_angle = i * (360.0 / count)
+    try:
+        cuts.append(make_cut(1, rot_angle))
+        cuts.append(make_cut(-1, rot_angle))
+    except Exception as e: 
+        print(f"Warning:  Failed to create cut {i}: {e}")
+
+if not cuts:
+    raise Exception("Failed to create any cuts")
+
+print(f"Created {len(cuts)} cutting tools, performing boolean operation...")
+
+# Perform cuts in batches to avoid overwhelming FreeCAD
+batch_size = 20
+result = shape
+
+for i in range(0, len(cuts), batch_size):
+    batch = cuts[i:i+batch_size]
+    tool = Part.makeCompound(batch)
+    try:
+        result = result.cut(tool)
+        print(f"Batch {i//batch_size + 1}/{(len(cuts)-1)//batch_size + 1} complete")
+    except Exception as e: 
+        print(f"Warning:  Batch {i} failed: {e}")
+
+# Clean up the result
+try:
+    result = result.removeSplitter()
+except:
+    print("Warning: removeSplitter failed, using raw result")
+
+knurled = doc.addObject("Part::Feature", "Knurled")
+knurled.Shape = result
+
+doc. recompute()
+print("Knurling complete!")
