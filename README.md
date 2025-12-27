@@ -1,5 +1,9 @@
 # FreeCAD Knurl Macro
 
+**Note**: This macro modifies your geometry destructively. Always work on a copy of your original design or save before running the macro!
+
+---
+
 A comprehensive FreeCAD macro for creating professional knurl patterns on cylindrical surfaces. This macro provides an intuitive GUI interface for generating various types of knurls including diamond (crosshatch), straight, and diagonal patterns.
 
 ![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)
